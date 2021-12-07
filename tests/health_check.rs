@@ -68,7 +68,7 @@ impl Client {
     pub fn new_with(address: &str) -> Self {
         let listener = TcpListener::bind(address).expect("failed to bind random port");
         let port = listener.local_addr().unwrap().port();
-        let server = zero2prod::run(listener).expect("failed to bind address");
+        let server = zero2prod::startup::run(listener).expect("failed to bind address");
         let _ = tokio::spawn(server);
         let client = reqwest::Client::new();
         let url = format!("http://127.0.0.1:{}", port);
