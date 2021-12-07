@@ -14,7 +14,7 @@ pub struct Database {
 }
 
 impl Database {
-    fn as_url(&self) -> String {
+    pub fn as_url(&self) -> String {
         format!(
             "postgres://{}:{}@{}:{}/{}",
             self.username, self.password, self.host, self.port, self.name

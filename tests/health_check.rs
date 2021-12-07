@@ -1,11 +1,14 @@
+use sqlx::{Connection, PgConnection};
 use std::net::TcpListener;
-use zero2prod;
+use zero2prod::{settings, startup};
 
 pub mod health_check {
     #[actix_rt::test]
     async fn test_health_check() {
-        let response = super::Client::new()
-            .get("/health-check")
+        let address = super::spawn();
+
+        let response = reqwest::Client::new()
+            .get(format!("{}/health-check", address))
             .send()
             .await
             .expect("failed to execute request");
@@ -19,19 +22,31 @@ pub mod subscriptions {
 
     #[actix_rt::test]
     async fn should_200_for_valid_form() {
-        let response = super::Client::new()
-            .post("/subscriptions")
+        let address = super::spawn();
+        let mut conn = super::connect().await;
+
+        let response = reqwest::Client::new()
+            .post(format!("{}/subscriptions", address))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body("name=le%20guin&email=ursula_le_guin%40gmail.com")
             .send()
             .await
             .expect("failed to execute request");
-
         assert_eq!(response.status().as_u16(), 200);
+
+        let saved = sqlx::query!("SELECT email, name FROM subscriptions",)
+            .fetch_one(&mut conn)
+            .await
+            .expect("failed to fetch saved subscription");
+        assert_eq!(saved.email, "ursula_le_guin@gmail.com");
+        assert_eq!(saved.name, "le guin");
     }
 
     #[actix_rt::test]
     async fn should_400_on_missing_data() {
+        let address = super::spawn();
+        let client = reqwest::Client::new();
+
         let cases = vec![
             ("name=le%20guin", "missing the email"),
             ("email=ursula_le_guin%40gmail.com", "missing the name"),
@@ -39,8 +54,8 @@ pub mod subscriptions {
         ];
 
         for (body, error) in cases {
-            let response = super::Client::new()
-                .post("/subscriptions")
+            let response = client
+                .post(format!("{}/subscriptions", address))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .body(body)
                 .send()
@@ -57,45 +72,18 @@ pub mod subscriptions {
     }
 }
 
-/// Test client takes care of spinning up server at a random port
-pub struct Client {
-    client: reqwest::Client,
-    url: String,
+fn spawn() -> String {
+    let address = "127.0.0.1";
+    let listener = TcpListener::bind(format!("{}:0", address)).expect("failed to bind random port");
+    let port = listener.local_addr().unwrap().port();
+    let server = startup::run(listener).expect("failed to bind address");
+    let _ = tokio::spawn(server);
+    format!("http://{}:{}", address, port)
 }
 
-impl Client {
-    /// Create test client with specified address
-    pub fn new_with(address: &str) -> Self {
-        let listener = TcpListener::bind(address).expect("failed to bind random port");
-        let port = listener.local_addr().unwrap().port();
-        let server = zero2prod::startup::run(listener).expect("failed to bind address");
-        let _ = tokio::spawn(server);
-        let client = reqwest::Client::new();
-        let url = format!("http://127.0.0.1:{}", port);
-        Self { client, url }
-    }
-
-    /// Create test client at 127.0.0.1 and a random port
-    pub fn new() -> Self {
-        Self::new_with("127.0.0.1:0")
-    }
-
-    /// Create request builder for a GET request at the specified route
-    pub fn get(&self, route: &str) -> reqwest::RequestBuilder {
-        self.client.get(format!("{}{}", self.url, normalize(route)))
-    }
-
-    /// Create request builder for a POST request at the specified route
-    pub fn post(&self, route: &str) -> reqwest::RequestBuilder {
-        self.client
-            .post(format!("{}{}", self.url, normalize(route)))
-    }
-}
-
-fn normalize(route: &str) -> String {
-    let mut route = String::from(route);
-    if !route.starts_with("/") {
-        route = format!("/{}", route);
-    }
-    route
+async fn connect() -> PgConnection {
+    let settings = settings::load().expect("failed to read config");
+    PgConnection::connect(&settings.database.as_url())
+        .await
+        .expect("failed to connect to postgres")
 }
