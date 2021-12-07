@@ -1,16 +1,60 @@
-use zero2prod;
 use std::net::TcpListener;
+use zero2prod;
 
-#[actix_rt::test]
-async fn test_health_check() {
-    let response = Client::new()
-        .get("/health-check")
-        .send()
-        .await
-        .expect("failed to execute request");
+pub mod health_check {
+    #[actix_rt::test]
+    async fn test_health_check() {
+        let response = super::Client::new()
+            .get("/health-check")
+            .send()
+            .await
+            .expect("failed to execute request");
 
-    assert!(response.status().is_success());
-    assert_eq!(response.content_length(), Some(0));
+        assert!(response.status().is_success());
+        assert_eq!(response.content_length(), Some(0));
+    }
+}
+
+pub mod subscriptions {
+
+    #[actix_rt::test]
+    async fn should_200_for_valid_form() {
+        let response = super::Client::new()
+            .post("/subscriptions")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body("name=le%20guin&email=ursula_le_guin%40gmail.com")
+            .send()
+            .await
+            .expect("failed to execute request");
+
+        assert_eq!(response.status().as_u16(), 200);
+    }
+
+    #[actix_rt::test]
+    async fn should_400_on_missing_data() {
+        let cases = vec![
+            ("name=le%20guin", "missing the email"),
+            ("email=ursula_le_guin%40gmail.com", "missing the name"),
+            ("", "missing both name and email"),
+        ];
+
+        for (body, error) in cases {
+            let response = super::Client::new()
+                .post("/subscriptions")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(body)
+                .send()
+                .await
+                .expect("failed to execute request");
+
+            assert_eq!(
+                response.status().as_u16(),
+                400,
+                "did not fail with 400 Bad Request despite {}",
+                error
+            );
+        }
+    }
 }
 
 /// Test client takes care of spinning up server at a random port
@@ -39,6 +83,12 @@ impl Client {
     /// Create request builder for a GET request at the specified route
     pub fn get(&self, route: &str) -> reqwest::RequestBuilder {
         self.client.get(format!("{}{}", self.url, normalize(route)))
+    }
+
+    /// Create request builder for a POST request at the specified route
+    pub fn post(&self, route: &str) -> reqwest::RequestBuilder {
+        self.client
+            .post(format!("{}{}", self.url, normalize(route)))
     }
 }
 
