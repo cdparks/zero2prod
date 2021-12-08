@@ -1,7 +1,29 @@
-# Latest stable rust as base image
-FROM rust:1.57.0
+FROM lukemathwalker/cargo-chef:latest-rust-1.57.0 AS chef
 WORKDIR /app
+
+# Sort of like a lock file
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Build dependencies only
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Finally build project
 COPY . .
 ENV SQLX_OFFLINE true
-RUN cargo build --release
-ENTRYPOINT ["./target/release/zero2prod"]
+RUN cargo build --release --bin zero2prod
+
+FROM debian:bullseye-slim AS runtime
+WORKDIR /app
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl \
+  && apt-get autoremove -y \
+  && apt-get clean -y \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/zero2prod zero2prod
+COPY settings settings
+ENV APP_ENV prod
+ENTRYPOINT ["./zero2prod"]
