@@ -1,14 +1,27 @@
+use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::net::TcpListener;
 use uuid::Uuid;
-use zero2prod::{settings, startup};
+use zero2prod::{settings, startup, telemetry};
 
 pub struct App {
     pub address: String,
     pub pool: PgPool,
 }
 
+static TRACING: Lazy<()> = Lazy::new(|| {
+    if std::env::var("TEST_LOG").is_ok() {
+        let subscriber = telemetry::load("test".into(), "debug".into(), std::io::stdout);
+        telemetry::init(subscriber);
+    } else {
+        let subscriber = telemetry::load("test".into(), "debug".into(), std::io::sink);
+        telemetry::init(subscriber);
+    }
+});
+
 pub async fn spawn() -> App {
+    Lazy::force(&TRACING);
+
     let localhost = "127.0.0.1";
     let listener =
         TcpListener::bind(format!("{}:0", localhost)).expect("failed to bind random port");
