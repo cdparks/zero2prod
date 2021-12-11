@@ -1,3 +1,7 @@
+use serde_aux::field_attributes::deserialize_number_from_string;
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use sqlx::ConnectOptions;
+
 #[derive(serde::Deserialize)]
 pub struct Settings {
     pub app: App,
@@ -5,32 +9,8 @@ pub struct Settings {
 }
 
 #[derive(serde::Deserialize)]
-pub struct Database {
-    pub port: u16,
-    pub host: String,
-    pub name: String,
-    pub username: String,
-    pub password: String,
-}
-
-impl Database {
-    pub fn url(&self) -> String {
-        format!(
-            "postgres://{}:{}@{}:{}/{}",
-            self.username, self.password, self.host, self.port, self.name
-        )
-    }
-
-    pub fn anon_url(&self) -> String {
-        format!(
-            "postgres://{}:{}@{}:{}",
-            self.username, self.password, self.host, self.port
-        )
-    }
-}
-
-#[derive(serde::Deserialize)]
 pub struct App {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
 }
@@ -38,6 +18,46 @@ pub struct App {
 impl App {
     pub fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct Database {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub port: u16,
+    pub host: String,
+    pub name: String,
+    pub username: String,
+    pub password: String,
+    pub ssl: bool,
+}
+
+impl Database {
+    pub fn to_options_with(&self, name: Option<&str>) -> PgConnectOptions {
+        let mode = if self.ssl {
+            PgSslMode::Require
+        } else {
+            PgSslMode::Prefer
+        };
+
+        let options = PgConnectOptions::new()
+            .host(&self.host)
+            .username(&self.username)
+            .password(&self.password)
+            .port(self.port)
+            .ssl_mode(mode)
+            .log_statements(log::LevelFilter::Trace)
+            .to_owned();
+
+        if let Some(name) = name {
+            options.database(name)
+        } else {
+            options
+        }
+    }
+
+    pub fn to_options(&self) -> PgConnectOptions {
+        self.to_options_with(Some(&self.name))
     }
 }
 

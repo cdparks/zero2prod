@@ -12,9 +12,7 @@ async fn main() -> std::io::Result<()> {
     let settings = settings::load().expect("failed to read config file");
     let pool = PgPoolOptions::new()
         .connect_timeout(std::time::Duration::from_secs(2))
-        .connect(&settings.database.url())
-        .await
-        .expect("failed to connect to postgres");
+        .connect_lazy_with(settings.database.to_options());
 
     let listener = TcpListener::bind(settings.app.address())?;
 
