@@ -85,7 +85,10 @@ impl TryFrom<String> for Env {
         match s.to_lowercase().as_str() {
             "dev" => Ok(Self::Dev),
             "prod" => Ok(Self::Prod),
-            other => Err(format!("Unrecognized environment {}; use dev or prod", other)),
+            other => Err(format!(
+                "Unrecognized environment {}; use dev or prod",
+                other
+            )),
         }
     }
 }
