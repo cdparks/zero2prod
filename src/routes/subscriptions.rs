@@ -1,6 +1,8 @@
+use crate::domain::Subscriber;
 use actix_web::{web, HttpResponse};
 use chrono::Utc;
 use sqlx::PgPool;
+use std::convert::{TryFrom, TryInto};
 use uuid::Uuid;
 
 #[allow(dead_code)]
@@ -20,7 +22,11 @@ pub struct FormData {
 )]
 #[allow(clippy::async_yields_async)]
 pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> HttpResponse {
-    match insert_subscriber(&form, &pool).await {
+    let subscriber = match form.0.try_into() {
+        Ok(subscriber) => subscriber,
+        Err(_) => return HttpResponse::BadRequest().finish(),
+    };
+    match insert_subscriber(&subscriber, &pool).await {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
@@ -28,17 +34,17 @@ pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> Ht
 
 #[tracing::instrument(
     name = "Saving new subscriber details in the database",
-    skip(form, pool)
+    skip(subscriber, pool)
 )]
-pub async fn insert_subscriber(form: &FormData, pool: &PgPool) -> Result<(), sqlx::Error> {
+pub async fn insert_subscriber(subscriber: &Subscriber, pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
         INSERT INTO subscriptions (id, email, name, created_at)
         VALUES ($1, $2, $3, $4)
         "#,
         Uuid::new_v4(),
-        form.email,
-        form.name,
+        subscriber.email.as_ref(),
+        subscriber.name.as_ref(),
         Utc::now()
     )
     .execute(pool)
@@ -48,4 +54,14 @@ pub async fn insert_subscriber(form: &FormData, pool: &PgPool) -> Result<(), sql
         e
     })?;
     Ok(())
+}
+
+impl TryFrom<FormData> for Subscriber {
+    type Error = String;
+
+    fn try_from(form: FormData) -> Result<Self, Self::Error> {
+        let email = form.email.parse()?;
+        let name = form.name.parse()?;
+        Ok(Self::new(email, name))
+    }
 }

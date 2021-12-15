@@ -2,3 +2,5 @@ app:
   host: "127.0.0.1"
 database:
   ssl: false
+email:
+  timeout_ms: 200

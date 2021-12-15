@@ -1,14 +1,17 @@
+use crate::domain::Email;
+use std::time::Duration;
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use sqlx::ConnectOptions;
 
-#[derive(serde::Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Deserialize)]
 pub struct Settings {
     pub app: App,
     pub database: Database,
+    pub email: EmailSettings,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Deserialize)]
 pub struct App {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
@@ -21,7 +24,7 @@ impl App {
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, serde::Deserialize)]
 pub struct Database {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
@@ -61,6 +64,24 @@ impl Database {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone, serde::Deserialize)]
+pub struct EmailSettings {
+    pub base_url: String,
+    pub sender_email: String,
+    pub auth_token: String,
+    pub timeout_ms: u64,
+}
+
+impl EmailSettings {
+    pub fn sender(&self) -> Result<Email, String> {
+        self.sender_email.parse()
+    }
+
+    pub fn timeout(&self) -> Duration {
+        Duration::from_millis(self.timeout_ms)
+    }
+}
+
 pub fn load() -> Result<Settings, config::ConfigError> {
     let mut settings = config::Config::default();
     let path = std::env::current_dir().expect("failed to determine current directory");
@@ -84,6 +105,7 @@ pub fn load() -> Result<Settings, config::ConfigError> {
     settings.try_into()
 }
 
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum Env {
     Dev,
     Prod,
