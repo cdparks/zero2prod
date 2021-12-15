@@ -1,8 +1,8 @@
-use crate::app;
+use crate::app::TestApp;
 
 #[actix_rt::test]
 async fn test_health_check() {
-    let app = app::spawn().await;
+    let app = TestApp::new().await;
 
     let response = reqwest::Client::new()
         .get(format!("{}/health-check", app.address))

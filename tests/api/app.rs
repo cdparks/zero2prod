@@ -1,13 +1,7 @@
 use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::net::TcpListener;
 use uuid::Uuid;
-use zero2prod::{settings, startup, telemetry};
-
-pub struct App {
-    pub address: String,
-    pub pool: PgPool,
-}
+use zero2prod::{app::App, settings, telemetry};
 
 static TRACING: Lazy<()> = Lazy::new(|| {
     if std::env::var("TEST_LOG").is_ok() {
@@ -19,26 +13,34 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     }
 });
 
-pub async fn spawn() -> App {
-    Lazy::force(&TRACING);
-
-    let localhost = "127.0.0.1";
-    let listener =
-        TcpListener::bind(format!("{}:0", localhost)).expect("failed to bind random port");
-    let port = listener.local_addr().unwrap().port();
-    let address = format!("http://{}:{}", localhost, port);
-
-    let mut settings = settings::load().expect("failed to read config");
-    settings.database.name = Uuid::new_v4().to_string();
-    let pool = configure_database(&settings.database).await;
-
-    let server = startup::run(listener, pool.clone()).expect("failed to bind address");
-    let _ = tokio::spawn(server);
-
-    App { address, pool }
+pub struct TestApp {
+    pub address: String,
+    pub pool: PgPool,
 }
 
-pub async fn configure_database(config: &settings::Database) -> PgPool {
+impl TestApp {
+    pub async fn new() -> Self {
+        Lazy::force(&TRACING);
+
+        let settings = {
+            let mut settings = settings::load().expect("failed to read config");
+            settings.database.name = Uuid::new_v4().to_string();
+            settings.app.port = 0;
+            settings
+        };
+
+        let app = App::new(settings.clone())
+            .await
+            .expect("failed to build application");
+        let address = format!("http://127.0.0.1:{}", app.port());
+        let pool = configure_database(&settings.database).await;
+        let _ = tokio::spawn(app.run());
+
+        TestApp { address, pool }
+    }
+}
+
+async fn configure_database(config: &settings::Database) -> PgPool {
     let mut conn = PgConnection::connect_with(&config.to_options_with(None))
         .await
         .expect("failed to connect to postgres");
