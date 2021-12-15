@@ -3,14 +3,9 @@ use crate::app::TestApp;
 #[actix_rt::test]
 async fn should_200_for_valid_form() {
     let app = TestApp::new().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+    let response = app.post_subscriptions(body.into()).await;
 
-    let response = reqwest::Client::new()
-        .post(format!("{}/subscriptions", app.address))
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body("name=le%20guin&email=ursula_le_guin%40gmail.com")
-        .send()
-        .await
-        .expect("failed to execute request");
     assert_eq!(response.status().as_u16(), 200);
 
     let saved = sqlx::query!("SELECT email, name FROM subscriptions",)
@@ -24,7 +19,6 @@ async fn should_200_for_valid_form() {
 #[actix_rt::test]
 async fn should_400_on_missing_data() {
     let app = TestApp::new().await;
-    let client = reqwest::Client::new();
 
     let cases = vec![
         ("name=le%20guin", "missing the email"),
@@ -33,13 +27,7 @@ async fn should_400_on_missing_data() {
     ];
 
     for (body, error) in cases {
-        let response = client
-            .post(format!("{}/subscriptions", app.address))
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(body)
-            .send()
-            .await
-            .expect("failed to execute request");
+        let response = app.post_subscriptions(body.into()).await;
 
         assert_eq!(
             response.status().as_u16(),
@@ -53,24 +41,20 @@ async fn should_400_on_missing_data() {
 #[actix_rt::test]
 async fn should_400_on_invalid_params() {
     let app = TestApp::new().await;
-    let client = reqwest::Client::new();
 
     let cases = vec![
         ("name=le%20guin&email=", "missing the email"),
         ("name=&email=ursula_le_guin%40gmail.com", "missing the name"),
         ("name=&email=", "missing both name and email"),
         ("name=le%20guin&email=what", "invalid email"),
-        ("name=%20%20%20&email=ursula_le_guin%40gmail.com", "invalid name"),
+        (
+            "name=%20%20%20&email=ursula_le_guin%40gmail.com",
+            "invalid name",
+        ),
     ];
 
     for (body, error) in cases {
-        let response = client
-            .post(format!("{}/subscriptions", app.address))
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(body)
-            .send()
-            .await
-            .expect("failed to execute request");
+        let response = app.post_subscriptions(body.into()).await;
 
         assert_eq!(
             response.status().as_u16(),
